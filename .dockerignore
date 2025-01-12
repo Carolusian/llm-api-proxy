@@ -1,0 +1,10 @@
+venv/
+.aider*
+.env
+*.pyc
+__pycache__/
+logs/
+docker-compose.yml
+README.md
+.gitignore
+.vscode/
