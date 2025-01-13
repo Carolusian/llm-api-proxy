@@ -3,7 +3,7 @@ import uvicorn
 import httpx  # <--- Added this line
 import collections
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 
 
@@ -20,11 +20,12 @@ providers = {
     "gemini": "https://generativelanguage.googleapis.com/",
 }
 
+
 @app.post("/{path:path}")
 async def reverse_proxy(request: Request, path: str):
     for p, base_url in providers.items():
         if path.startswith(f"{p}/"):
-            url = base_url + path[len(p) + 1:]
+            url = base_url + path[len(p) + 1 :]
             target_url = httpx.URL(url, query=request.url.query.encode("utf-8"))
             if p == "gemini" and gemini_api_key:
                 params = target_url.params.merge({"key": gemini_api_key})
@@ -40,7 +41,7 @@ async def reverse_proxy(request: Request, path: str):
     new_headers = collections.defaultdict(str)
     if auth := request.headers.get("authorization"):
         new_headers = {"Authorization": auth}
-    body = await request.json() if request.method in ["POST"] else None
+    body = await request.json() if request.method in ["POST"] else {}
     stream = body.get("stream", False) or "streamGenerateContent" in path
     req = client.build_request(
         request.method, target_url, headers=new_headers, content=await request.body()
@@ -48,18 +49,23 @@ async def reverse_proxy(request: Request, path: str):
 
     if stream:
         response = await client.send(req, stream=True)
+        if response.status_code >= 400:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
         return StreamingResponse(
             response.aiter_bytes(),
             status_code=response.status_code,
             headers=response.headers,
         )
     response = await client.send(req)
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
     return response.json()
 
 
 @app.get("/{path:path}")
 async def reverse_proxy_get(request: Request, path: str):
     return await reverse_proxy(request, path)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
